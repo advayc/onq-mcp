@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
 from threading import Lock
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import parse_qs, urlsplit
 
 from mcp.server.fastmcp import FastMCP
@@ -174,7 +174,7 @@ def content_links(page: Page, course_id: int, query: str) -> list[dict]:
     selector = "a[href*='/viewContent/'], a[href*='/topics/'], a[href*='/lessons/']"
     topic_paths = (
         re.compile(rf"/d2l/le/content/{course_id}/viewContent/(\d+)/View/?", re.I),
-        re.compile(rf"/d2l/le/lessons/{course_id}/(?:topics/)?(\d+)/?", re.I),
+        re.compile(rf"/d2l/le/lessons/{course_id}/topics/(\d+)/?", re.I),
     )
     results = {}
     for link in visible_links(page, selector):
@@ -208,6 +208,22 @@ def classic_modules(page: Page, course_id: int) -> list[dict]:
         if match:
             module_id = int(match[1])
             modules[module_id] = {"module_id": module_id, "title": link["title"], "url": link["url"]}
+    return list(modules.values())
+
+
+def lessons_modules(page: Page, course_id: int) -> list[dict]:
+    modules = {}
+    route = re.compile(rf"/d2l/le/lessons/{course_id}/(units|lessons|folders)/(\d+)/?", re.I)
+    for link in visible_links(page, "a[href*='/d2l/le/lessons/']"):
+        if not same_site(link["url"]) or not link["title"]:
+            continue
+        path = urlsplit(link["url"]).path
+        match = route.fullmatch(path)
+        if match:
+            module_id = int(match[2])
+            modules[module_id] = {
+                "module_id": module_id, "module_type": match[1].lower(), "title": link["title"],
+            }
     return list(modules.values())
 
 
@@ -281,10 +297,15 @@ def register_tools(mcp: FastMCP) -> None:
         offset: Offset = 0,
         new_content: bool = False,
         module_id: Annotated[int, Field(gt=0, le=2147483647)] | None = None,
+        module_type: Literal["units", "lessons", "folders"] | None = None,
     ) -> dict:
         """List visible topic links on a course's Content page. For the lessons layout, use new_content."""
         with browser() as page:
             path = f"/d2l/le/lessons/{course_id}" if new_content else f"/d2l/le/content/{course_id}/Home"
+            if module_type is not None:
+                if module_id is None:
+                    raise OnQError("Provide the module_id along with the module_type.")
+                path = f"/d2l/le/lessons/{course_id}/{module_type}/{module_id}"
             navigate(page, path)
             new_content = urlsplit(page.url).path.startswith("/d2l/le/lessons/")
             if not new_content and module_id is None:
@@ -293,17 +314,21 @@ def register_tools(mcp: FastMCP) -> None:
                     toc.click()
                     page.wait_for_load_state("domcontentloaded")
             require_onq(page)
-            modules = classic_modules(page, course_id) if not new_content else []
-            if module_id is not None:
+            read_modules = lessons_modules if new_content else classic_modules
+            modules = read_modules(page, course_id)
+            if module_id is not None and not new_content:
                 module = next((item for item in modules if item["module_id"] == module_id), None)
                 if module is None:
                     raise OnQError("This module is unavailable from the course's Content page.")
                 navigate(page, module["url"].removeprefix(ORIGIN))
+                modules = read_modules(page, course_id)
+            elif module_id is not None and module_type is None:
+                raise OnQError("Use the module_type returned with the module_id for the Lessons layout.")
             topics = content_links(page, course_id, query)
             end = offset + 75
             return {
                 "topics": topics[offset:end],
-                "modules": [{"module_id": item["module_id"], "title": item["title"]} for item in modules],
+                "modules": [{key: value for key, value in item.items() if key != "url"} for item in modules],
                 "next_offset": end if end < len(topics) else None,
                 "content_page": ORIGIN + urlsplit(page.url).path,
                 "new_content": new_content,

@@ -48,7 +48,7 @@ pbpaste | .venv/bin/python onq_calendar.py --set-feed
 | `list_courses` | Find course names and IDs visible on the home page and in the course selector. |
 | `read_course_announcements` | Read the visible text on the course’s Announcements page. |
 | `read_my_grades` | Read the student Grades page and any feedback shown there. |
-| `list_course_content` | Find topic titles and IDs in the course table of contents. Supply `module_id` to browse a listed classic module. |
+| `list_course_content` | Find topic titles and IDs in the course table of contents. Supply the listed `module_id` and, for the Lessons layout, `module_type` to browse within a module. |
 | `read_content_topic` | Read a topic’s visible text, including same-site embedded pages. |
 | `download_content_topic` | Save a file from the onQ topic’s Download control to `~/Downloads/onQ` and return its absolute path. |
 | `upcoming_course_events` | Read upcoming dates from the optional calendar subscription. |
