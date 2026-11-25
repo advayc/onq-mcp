@@ -1,0 +1,4 @@
+mcp>=1.26,<2
+icalendar>=6.1,<8
+recurring-ical-events>=3.8,<4
+playwright>=1.51,<2
